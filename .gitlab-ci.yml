@@ -1,0 +1,65 @@
+stages:
+    - static-analyse
+    - test
+    - build
+
+variables:
+    AWS: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+    DOCKERFILE_PATH: './docker/nest/Dockerfile'
+    IMAGE_NAME: $AWS/pdf
+
+Lint:
+    stage: static-analyse
+    image: node:20.11.0
+    script:
+        - cd app
+        - npm install
+        - npm run lint
+    tags:
+        - docker
+
+Unit Test:
+    stage: test
+    image: node:20.11.0
+    script:
+        - cd app
+        - npm install
+        - npm run test
+    tags:
+        - docker
+
+E2E Test:
+    stage: test
+    image: node:20.11.0
+    script:
+        - cd app
+        - npm install
+        - npm run test:e2e
+    tags:
+        - docker
+
+.Build Docker Image:
+    stage: build
+    before_script:
+        - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS
+    after_script:
+        - docker push -a $IMAGE_NAME
+    tags:
+        - aws
+
+Build Latest Production Image:
+    extends: .Build Docker Image
+    only:
+        - main
+    script:
+        - docker build --build-arg="APP_MODE=prod" -t $IMAGE_NAME:latest -f $DOCKERFILE_PATH .
+
+Build Latest Development Image:
+    extends: .Build Docker Image
+    only:
+        - /^release-.*$/
+    script:
+        - export RELEASE_VERSION=$(echo $CI_COMMIT_REF_NAME | sed 's/^release-//')
+        - docker build --build-arg="APP_MODE=prod" -t $IMAGE_NAME:$RELEASE_VERSION -f $DOCKERFILE_PATH .
+        - docker build --build-arg="APP_MODE=dev" -t $IMAGE_NAME:$RELEASE_VERSION-dev -f $DOCKERFILE_PATH .
+
